@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -17,39 +14,30 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Структуры данных
+// Структура сообщений теперь поддерживает P2P-сигнализацию
 type Message struct {
-	Type     string `json:"type"`    // "text", "file", "system", "room_destroyed"
-	Content  string `json:"content"` // Текст сообщения или имя файла
-	FileID   string `json:"file_id"` // ID файла для скачивания
-	SenderID string `json:"sender_id"`
+	Type       string      `json:"type"`    // "text", "system", "room_destroyed", "peer_joined", "signal"
+	Content    string      `json:"content"` // Текст
+	SenderID   string      `json:"sender_id"`
+	TargetID   string      `json:"target_id,omitempty"`   // Для WebRTC (кому адресован сигнал)
+	SignalData interface{} `json:"signal_data,omitempty"` // SDP или ICE кандидат
 }
 
 type Client struct {
 	ID   string
 	Conn *websocket.Conn
-	mu   sync.Mutex // Защита от конкурентной записи в вебсокет
+	mu   sync.Mutex
 }
 
 type Room struct {
 	ID      string
 	Clients map[string]*Client
-	History []Message
-	FileIDs []string // Для очистки памяти
+	History []Message // Храним только текстовую историю
 }
 
-type MemoryFile struct {
-	Name string
-	Data []byte
-}
-
-// Глобальное состояние (в оперативной памяти)
 var (
 	roomsMu sync.RWMutex
 	rooms   = make(map[string]*Room)
-
-	filesMu sync.RWMutex
-	files   = make(map[string]MemoryFile)
 )
 
 func init() {
@@ -66,16 +54,11 @@ func generateCode() string {
 }
 
 func main() {
-	// Раздача фронтенда
 	fs := http.FileServer(http.Dir("./frontend"))
 	http.Handle("/", fs)
-
-	// Эндпоинты
 	http.HandleFunc("/ws", handleWebSocket)
-	http.HandleFunc("/upload", handleFileUpload)
-	http.HandleFunc("/download", handleFileDownload)
 
-	fmt.Println("🚀 WarpRoom запущен на http://localhost:8080")
+	log.Println("🚀 WarpRoom запущен на http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -107,39 +90,31 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	room.Clients[clientID] = client
 	roomsMu.Unlock()
 
-	// Отправляем клиенту его ID и код комнаты
 	client.mu.Lock()
 	conn.WriteJSON(map[string]interface{}{
 		"type": "init", "room": roomCode, "client_id": clientID,
 	})
-	// Отправляем историю комнаты
 	for _, msg := range room.History {
 		conn.WriteJSON(msg)
 	}
 	client.mu.Unlock()
 
-	broadcast(roomCode, Message{Type: "system", Content: "Пользователь присоединился"})
+	// Оповещаем остальных, что нужен WebRTC коннект
+	broadcastUnsafeTargeted(roomCode, Message{
+		Type:     "peer_joined",
+		SenderID: clientID,
+		Content:  "Пользователь присоединился",
+	}, clientID)
 
-	// Чтение сообщений от клиента
 	defer func() {
 		roomsMu.Lock()
 		if r, ok := rooms[roomCode]; ok {
 			delete(r.Clients, clientID)
-			broadcastUnsafe(r, Message{Type: "system", Content: "Пользователь отключился"})
+			broadcastUnsafeTargeted(roomCode, Message{Type: "system", Content: "Пользователь отключился"}, "")
 
-			// Если лобби пустое — уничтожаем всё
 			if len(r.Clients) == 0 {
-				broadcastUnsafe(r, Message{Type: "room_destroyed"}) // На всякий случай
-
-				// Очищаем файлы из ОЗУ
-				filesMu.Lock()
-				for _, fID := range r.FileIDs {
-					delete(files, fID)
-				}
-				filesMu.Unlock()
-
 				delete(rooms, roomCode)
-				log.Printf("Комната %s и ее файлы уничтожены.", roomCode)
+				log.Printf("Комната %s уничтожена.", roomCode)
 			}
 		}
 		roomsMu.Unlock()
@@ -154,94 +129,40 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		msg.SenderID = clientID
 
-		roomsMu.Lock()
-		if r, ok := rooms[roomCode]; ok {
-			r.History = append(r.History, msg)
+		// Сохраняем только текст в историю
+		if msg.Type == "text" {
+			roomsMu.Lock()
+			if r, ok := rooms[roomCode]; ok {
+				r.History = append(r.History, msg)
+			}
+			roomsMu.Unlock()
+			broadcastUnsafeTargeted(roomCode, msg, "")
+		} else if msg.Type == "signal" {
+			// Перенаправляем WebRTC сигналы конкретному пиру
+			roomsMu.RLock()
+			if r, ok := rooms[roomCode]; ok {
+				if target, ok := r.Clients[msg.TargetID]; ok {
+					target.mu.Lock()
+					target.Conn.WriteJSON(msg)
+					target.mu.Unlock()
+				}
+			}
+			roomsMu.RUnlock()
 		}
-		roomsMu.Unlock()
-
-		broadcast(roomCode, msg)
 	}
 }
 
-func broadcast(roomCode string, msg Message) {
+// Отправка всем, кроме excludedID (если excludedID == "" шлем всем)
+func broadcastUnsafeTargeted(roomCode string, msg Message, excludedID string) {
 	roomsMu.RLock()
 	defer roomsMu.RUnlock()
 	if room, ok := rooms[roomCode]; ok {
-		broadcastUnsafe(room, msg)
-	}
-}
-
-// Вызывать только внутри заблокированного мьютекса roomsMu
-func broadcastUnsafe(room *Room, msg Message) {
-	for _, client := range room.Clients {
-		client.mu.Lock()
-		client.Conn.WriteJSON(msg)
-		client.mu.Unlock()
-	}
-}
-
-func handleFileUpload(w http.ResponseWriter, r *http.Request) {
-	err := r.ParseMultipartForm(50 << 20) // Лимит 50 MB в ОЗУ
-	if err != nil {
-		http.Error(w, "Файл слишком большой", http.StatusBadRequest)
-		return
-	}
-
-	roomCode := r.FormValue("room")
-	senderID := r.FormValue("sender_id")
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "Ошибка чтения файла", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	var buf bytes.Buffer
-	io.Copy(&buf, file)
-
-	fileID := generateCode() + generateCode()
-
-	filesMu.Lock()
-	files[fileID] = MemoryFile{
-		Name: header.Filename,
-		Data: buf.Bytes(),
-	}
-	filesMu.Unlock()
-
-	// Привязываем файл к комнате для удаления
-	roomsMu.Lock()
-	if room, ok := rooms[roomCode]; ok {
-		room.FileIDs = append(room.FileIDs, fileID)
-
-		msg := Message{
-			Type:     "file",
-			Content:  header.Filename,
-			FileID:   fileID,
-			SenderID: senderID,
+		for id, client := range room.Clients {
+			if id != excludedID {
+				client.mu.Lock()
+				client.Conn.WriteJSON(msg)
+				client.mu.Unlock()
+			}
 		}
-		room.History = append(room.History, msg)
-		broadcastUnsafe(room, msg)
 	}
-	roomsMu.Unlock()
-
-	w.WriteHeader(http.StatusOK)
-}
-
-func handleFileDownload(w http.ResponseWriter, r *http.Request) {
-	fileID := r.URL.Query().Get("id")
-
-	filesMu.RLock()
-	memFile, exists := files[fileID]
-	filesMu.RUnlock()
-
-	if !exists {
-		http.Error(w, "Файл не найден или уничтожен", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", memFile.Name))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Write(memFile.Data)
 }
