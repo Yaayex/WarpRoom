@@ -69,14 +69,13 @@ function connect(action, roomCode = '') {
             displayRoomCode.innerText = currentRoom;
             window.history.replaceState(null, '', `?room=${currentRoom}`);
             
-            // Логика кнопок для создателя и гостя
             if (isOwner) {
                 leaveBtn.innerText = 'Уничтожить лобби';
                 leaveBtn.className = 'danger-btn';
                 renderMessage({type: 'system', content: 'Вы создатель. Ваш уход уничтожит лобби для всех.'});
             } else {
                 leaveBtn.innerText = 'Покинуть комнату';
-                leaveBtn.className = 'secondary-btn'; // выглядит как обычная кнопка
+                leaveBtn.className = 'secondary-btn'; 
                 renderMessage({type: 'system', content: 'Вы присоединились к лобби.'});
             }
 
@@ -86,23 +85,13 @@ function connect(action, roomCode = '') {
             initWebRTC(data.sender_id, true);
         } else if (data.type === 'signal') {
             handleSignal(data.sender_id, data.signal_data);
-        } else if (data.type === 'read_receipt') {
-            const statusEl = document.getElementById(`status-${data.content}`);
-            if (statusEl) {
-                statusEl.innerText = '✓✓';
-                statusEl.style.color = '#30d158';
-            }
         } else if (data.type === 'room_destroyed') {
             triggerDissolve();
         } else {
             renderMessage(data);
-            if (data.type === 'text' && data.id) {
-                ws.send(JSON.stringify({ type: 'read_receipt', content: data.id, target_id: data.sender_id }));
-            }
         }
     };
     
-    // Если сокет закрыт сервером неожиданно и комната открыта
     ws.onclose = () => { if(roomScreen.classList.contains('active')) triggerDissolve(); };
 }
 
@@ -193,7 +182,6 @@ function assembleAndRenderFile(peerId) {
     const url = URL.createObjectURL(blob);
     const wrapper = document.getElementById(`wrapper-${transfer.id}`);
     wrapper.outerHTML = getFileHTML(url, transfer.info.name, transfer.info.type, false);
-    ws.send(JSON.stringify({ type: 'read_receipt', content: transfer.id, target_id: peerId }));
     delete incomingFiles[peerId];
 }
 
@@ -226,8 +214,7 @@ function renderMessage(msg) {
         const isMine = msg.sender_id === myClientId;
         div.className = `msg ${isMine ? 'mine' : 'theirs'}`;
         let contentHtml = msg.content.startsWith('http') ? `<a href="${msg.content}" target="_blank" style="color:inherit; text-decoration:underline;">${msg.content}</a>` : msg.content;
-        const statusHTML = isMine ? `<span id="status-${msg.id}" class="msg-status">✓</span>` : '';
-        div.innerHTML = `<div>${contentHtml}</div> ${statusHTML}`;
+        div.innerHTML = `<div>${contentHtml}</div>`;
     }
     messagesDiv.appendChild(div);
     chatArea.scrollTop = chatArea.scrollHeight;
@@ -263,7 +250,7 @@ function getFileHTML(url, name, type, isMine, msgId = '') {
     const icon = `<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>`;
     let contentHTML = `<a href="${url}" download="${name}" class="msg-file-link">${icon} ${name}</a>`;
     if (type.startsWith('image/')) contentHTML += `<a href="${url}" target="_blank"><img src="${url}" class="msg-image" alt="preview"></a>`;
-    return `<div class="msg ${isMine ? 'mine' : 'theirs'}"><div>${contentHTML}</div>${isMine ? `<span id="status-${msgId}" class="msg-status">✓</span>` : ''}</div>`;
+    return `<div class="msg ${isMine ? 'mine' : 'theirs'}"><div>${contentHTML}</div></div>`;
 }
 
 function switchScreen(screen) {
@@ -271,13 +258,11 @@ function switchScreen(screen) {
     screen.classList.add('active');
 }
 
-// Надежная очистка приложения с удалением URL параметров
 function resetApp() {
     switchScreen(authScreen);
     messagesDiv.innerHTML = '';
     currentRoom = '';
     
-    // Стираем ?room=CODE из адресной строки браузера
     window.history.replaceState(null, '', window.location.pathname);
     
     if(ws) { ws.onclose = null; ws.close(); ws = null; }
@@ -297,13 +282,10 @@ function triggerDissolve() {
     }, 1000);
 }
 
-// Обработка кнопки выхода
 leaveBtn.onclick = () => {
     if (isOwner) {
-        // Создатель уничтожает лобби (запускается анимация и рассылка)
         triggerDissolve();
     } else {
-        // Гость просто выходит (без экрана уничтожения, сразу в меню)
         if(ws) { ws.onclose = null; ws.close(); }
         resetApp();
         showToast("Вы покинули лобби", "success");

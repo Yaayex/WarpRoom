@@ -1,6 +1,6 @@
 :root {
     --bg-color: #000000;
-    --card-bg: rgba(15, 15, 18, 0.75); /* Чуть светлее для глубины */
+    --card-bg: rgba(15, 15, 18, 0.75);
     --border-color: rgba(255, 255, 255, 0.08);
     --text-main: #ffffff;
     --text-muted: #8e8e93;
@@ -9,8 +9,10 @@
     --danger: #ff453a;
     --danger-hover: #cc3228;
     --message-bg: rgba(30, 30, 32, 0.9);
-    --message-mine: #ffffff;
-    --message-mine-text: #000000;
+    
+    /* Приятный синий цвет для сообщений отправителя */
+    --message-mine: #0a84ff;
+    --message-mine-text: #ffffff;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,31 +37,7 @@ body {
 }
 .screen.active { display: flex; }
 
-/* 
-  ========================================
-  СТИЛИ ОКНА КОМНАТЫ (DESKTOP)
-  ========================================
-*/
-#room-screen.active {
-    max-width: 900px;
-    height: 90vh;
-    max-height: 900px;
-    margin: auto;
-    background: var(--card-bg);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid var(--border-color);
-    border-radius: 32px;
-    box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    overflow: hidden; /* Важно: обрезает контент под скругленные углы */
-    position: relative;
-}
-
-/* 
-  ========================================
-  КАРТОЧКИ (АВТОРИЗАЦИЯ И УНИЧТОЖЕНИЕ)
-  ========================================
-*/
+/* Карточки авторизации и уничтожения */
 .glass-card {
     background: var(--card-bg);
     backdrop-filter: blur(40px);
@@ -75,11 +53,7 @@ body {
 }
 
 .destroyed-card {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 16px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
 }
 .destroyed-card p { color: var(--text-muted); line-height: 1.5; margin-bottom: 16px; text-align: center;}
 
@@ -87,11 +61,7 @@ body {
 .logo span { opacity: 0.5; }
 .subtitle { color: var(--text-muted); font-size: 14px; margin-bottom: 40px; }
 
-/* 
-  ========================================
-  ЭЛЕМЕНТЫ УПРАВЛЕНИЯ
-  ========================================
-*/
+/* Инпуты и кнопки */
 input {
     width: 100%; background: #000000; border: 1px solid var(--border-color);
     color: white; padding: 16px 20px; border-radius: 16px; font-size: 16px; outline: none; transition: 0.3s ease;
@@ -100,13 +70,22 @@ input:focus { border-color: rgba(255,255,255,0.4); box-shadow: 0 0 0 4px rgba(25
 
 button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 500; border-radius: 16px; padding: 16px; border: none; transition: 0.3s ease; }
 
-.primary-btn { background: var(--accent); color: var(--message-mine-text); width: 100%; font-weight: 600; }
+.primary-btn { background: var(--accent); color: #000; width: 100%; font-weight: 600; }
 .primary-btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 10px 20px rgba(255,255,255,0.1); }
 
 .secondary-btn { background: #1a1a1a; color: white; width: 100%; border: 1px solid var(--border-color); }
 .secondary-btn:hover { background: #222; }
 
-.danger-btn { background: transparent; color: var(--danger); font-size: 14px; padding: 8px 16px; border-radius: 12px;}
+/* Ограничиваем размер кнопки в хедере */
+#leave-btn {
+    width: auto;
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+.danger-btn { background: transparent; color: var(--danger); border: 1px solid rgba(255, 69, 58, 0.3); }
 .danger-btn:hover { background: rgba(255, 69, 58, 0.1); }
 
 .divider { margin: 24px 0; position: relative; text-align: center; }
@@ -116,13 +95,11 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
 .join-group { display: flex; gap: 12px; }
 .join-group input { text-transform: uppercase; font-family: monospace; letter-spacing: 2px;}
 
-/* 
-  ========================================
-  ХЕДЕР И ФУТЕР КОМНАТЫ
-  ========================================
-*/
+/* Комната */
 .glass-header, .glass-footer {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(10, 10, 12, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--border-color);
     padding: 20px 32px; 
     display: flex; 
@@ -131,21 +108,16 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
 }
 .glass-footer { border-bottom: none; border-top: 1px solid var(--border-color); gap: 12px; }
 
-.header-info { display: flex; align-items: center; }
+.header-info { display: flex; align-items: center; gap: 12px;}
 .code-badge {
-    background: #111; padding: 6px 12px; border-radius: 8px; font-family: monospace; font-size: 16px; letter-spacing: 2px; margin-left: 8px;
+    background: #111; padding: 6px 12px; border-radius: 8px; font-family: monospace; font-size: 16px; letter-spacing: 2px;
     cursor: pointer; border: 1px solid var(--border-color); transition: 0.2s;
 }
 .code-badge:hover { background: #222; }
 
-#message-input { flex: 1; } /* Растягивает инпут на всё свободное место */
+#message-input { flex: 1; }
 
-/* 
-  ========================================
-  ЧАТ И СООБЩЕНИЯ
-  ========================================
-*/
-#chat-area { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; position: relative; }
+#chat-area { flex: 1; overflow-y: auto; padding: 32px 15%; display: flex; flex-direction: column; position: relative; }
 .empty-state { margin: auto; text-align: center; color: var(--text-muted); }
 .empty-state .sub-text { font-size: 13px; margin-top: 12px; opacity: 0.5; }
 
@@ -156,23 +128,15 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
 .msg.theirs { align-self: flex-start; background: var(--message-bg); border-bottom-left-radius: 6px; border: 1px solid var(--border-color); }
 .msg.system { align-self: center; background: transparent; color: var(--text-muted); font-size: 12px; padding: 4px; border: none;}
 
-.msg > div:first-child { margin-bottom: 2px; }
-.msg-status { display: block; text-align: right; font-size: 11px; margin-top: 4px; opacity: 0.8; color: rgba(255,255,255,0.7); transition: color 0.3s ease; }
-
 .msg-image { max-width: 100%; border-radius: 12px; margin-top: 8px; cursor: pointer; display: block; border: 1px solid rgba(255,255,255,0.1);}
 .msg-file-link { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; font-weight: 500;}
 .msg-file-link svg { flex-shrink: 0; }
 
-/* 
-  ========================================
-  ФАЙЛЫ И ПРОГРЕСС
-  ========================================
-*/
 .file-progress-wrap { display: flex; flex-direction: column; gap: 8px; min-width: 250px; }
 .file-info { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .progress-bar { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.2); border-radius: 4px; overflow: hidden; }
-.progress-fill { height: 100%; width: 0%; background: #0a84ff; transition: width 0.2s ease; }
-.progress-text { font-size: 12px; text-align: right; opacity: 0.7; }
+.progress-fill { height: 100%; width: 0%; background: #ffffff; transition: width 0.2s ease; } /* Прогресс-бар белого цвета для контраста на синем */
+.progress-text { font-size: 12px; text-align: right; opacity: 0.8; }
 
 .icon-btn { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
 #file-btn { background: transparent; color: var(--text-muted); padding: 14px; flex-shrink: 0; }
@@ -181,16 +145,12 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
 #drop-overlay {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8);
     backdrop-filter: blur(10px); border: 2px dashed rgba(255,255,255,0.3);
-    display: none; align-items: center; justify-content: center; z-index: 100; border-radius: inherit; margin: 16px;
+    display: none; align-items: center; justify-content: center; z-index: 100; margin: 16px; border-radius: 24px;
 }
 #drop-overlay.active { display: flex; }
 .drop-content { font-size: 24px; font-weight: 600; color: white; pointer-events: none;}
 
-/* 
-  ========================================
-  УВЕДОМЛЕНИЯ (TOASTS)
-  ========================================
-*/
+/* Уведомления */
 #toast-container {
     position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 9999;
     display: flex; flex-direction: column; gap: 12px; pointer-events: none;
@@ -204,11 +164,6 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
 .toast.error { box-shadow: 0 10px 30px rgba(255, 69, 58, 0.15); border: 1px solid rgba(255, 69, 58, 0.4); }
 .toast.success { box-shadow: 0 10px 30px rgba(48, 209, 88, 0.15); border: 1px solid rgba(48, 209, 88, 0.4); }
 
-/* 
-  ========================================
-  АНИМАЦИИ
-  ========================================
-*/
 .dissolve { animation: dissolveAnim 1s forwards ease-in-out; }
 @keyframes dissolveAnim { 0% { filter: blur(0px); opacity: 1; transform: scale(1); } 100% { filter: blur(30px); opacity: 0; transform: scale(1.05); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -225,32 +180,20 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
   ========================================
 */
 @media (max-width: 950px) {
-    /* Если экран меньше 950px, убираем отступы по краям и делаем 100% высоту */
-    #room-screen.active {
-        max-width: 100%;
-        height: 100vh;
-        max-height: 100vh;
-        border-radius: 0;
-        border: none;
-        box-shadow: none;
-        background: transparent;
-    }
+    #chat-area { padding: 32px 5%; }
 }
 
 @media (max-width: 600px) {
-    /* Мобильные телефоны */
     .glass-card {
-        max-width: 90%;
-        padding: 32px 24px;
-        border-radius: 24px;
+        max-width: 90%; padding: 32px 24px; border-radius: 24px;
     }
     
     .glass-header {
-        padding: 16px 20px;
+        padding: 16px;
     }
     
     .glass-footer {
-        padding: 12px 16px;
+        padding: 12px; gap: 8px;
     }
     
     #chat-area {
@@ -258,11 +201,16 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
     }
     
     .room-label {
-        display: none; /* Прячем текст "Код (клик для ссылки):", оставляем только плашку */
+        display: none;
     }
     
     .code-badge {
         margin-left: 0;
+    }
+
+    #leave-btn {
+        padding: 10px 14px;
+        font-size: 13px;
     }
     
     .msg {
@@ -271,11 +219,11 @@ button { cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 50
     }
     
     .icon-btn {
-        width: 46px;
-        height: 46px;
+        width: 44px; height: 44px;
     }
     
     #message-input {
         padding: 12px 16px;
     }
+    .file-progress-wrap { min-width: 200px; }
 }
