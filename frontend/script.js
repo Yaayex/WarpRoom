@@ -16,10 +16,10 @@ const messageInput = document.getElementById('message-input');
 const messagesDiv = document.getElementById('messages');
 const chatArea = document.getElementById('chat-area');
 const dropOverlay = document.getElementById('drop-overlay');
+const leaveBtn = document.getElementById('leave-btn');
 
 const generateId = () => 'msg_' + Math.random().toString(36).substr(2, 9);
 
-// Toast уведомления
 function showToast(msg, type = 'error') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -68,11 +68,19 @@ function connect(action, roomCode = '') {
             isOwner = data.is_owner;
             displayRoomCode.innerText = currentRoom;
             window.history.replaceState(null, '', `?room=${currentRoom}`);
-            switchScreen(roomScreen);
             
+            // Логика кнопок для создателя и гостя
             if (isOwner) {
-                renderMessage({type: 'system', content: 'Вы создатель комнаты. Ваш уход уничтожит её для всех.'});
+                leaveBtn.innerText = 'Уничтожить лобби';
+                leaveBtn.className = 'danger-btn';
+                renderMessage({type: 'system', content: 'Вы создатель. Ваш уход уничтожит лобби для всех.'});
+            } else {
+                leaveBtn.innerText = 'Покинуть комнату';
+                leaveBtn.className = 'secondary-btn'; // выглядит как обычная кнопка
+                renderMessage({type: 'system', content: 'Вы присоединились к лобби.'});
             }
+
+            switchScreen(roomScreen);
         } else if (data.type === 'peer_joined') {
             renderMessage({type: 'system', content: 'Участник подключился (P2P...)'});
             initWebRTC(data.sender_id, true);
@@ -82,7 +90,7 @@ function connect(action, roomCode = '') {
             const statusEl = document.getElementById(`status-${data.content}`);
             if (statusEl) {
                 statusEl.innerText = '✓✓';
-                statusEl.style.color = '#30d158'; // Зеленый цвет для прочитанного
+                statusEl.style.color = '#30d158';
             }
         } else if (data.type === 'room_destroyed') {
             triggerDissolve();
@@ -93,10 +101,12 @@ function connect(action, roomCode = '') {
             }
         }
     };
+    
+    // Если сокет закрыт сервером неожиданно и комната открыта
     ws.onclose = () => { if(roomScreen.classList.contains('active')) triggerDissolve(); };
 }
 
-// === WEBRTC LOGIC (без изменений) ===
+// === WEBRTC LOGIC ===
 const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 async function initWebRTC(peerId, isInitiator) {
     const pc = new RTCPeerConnection(configuration);
@@ -136,7 +146,7 @@ function setupDataChannel(dc, peerId) {
             const msg = JSON.parse(e.data);
             if (msg.type === 'file_start') {
                 incomingFiles[peerId] = { id: msg.id, info: msg.info, chunks: [], receivedSize: 0 };
-                renderIncomingFileUI(msg.id, msg.info.name, peerId);
+                renderIncomingFileUI(msg.id, msg.info.name);
             } else if (msg.type === 'file_end') {
                 assembleAndRenderFile(peerId);
             }
@@ -261,12 +271,15 @@ function switchScreen(screen) {
     screen.classList.add('active');
 }
 
-// Новый механизм очистки без перезагрузки всей страницы
+// Надежная очистка приложения с удалением URL параметров
 function resetApp() {
     switchScreen(authScreen);
     messagesDiv.innerHTML = '';
     currentRoom = '';
-    window.history.replaceState(null, '', '/');
+    
+    // Стираем ?room=CODE из адресной строки браузера
+    window.history.replaceState(null, '', window.location.pathname);
+    
     if(ws) { ws.onclose = null; ws.close(); ws = null; }
     Object.values(peers).forEach(pc => pc.close());
     peers = {}; dataChannels = {}; incomingFiles = {};
@@ -274,14 +287,27 @@ function resetApp() {
 }
 
 function triggerDissolve() {
+    if(ws) { ws.onclose = null; ws.close(); }
     roomScreen.classList.add('dissolve');
     setTimeout(() => {
         switchScreen(destroyedScreen);
         roomScreen.classList.remove('dissolve');
+        Object.values(peers).forEach(pc => pc.close());
+        peers = {}; dataChannels = {}; incomingFiles = {};
     }, 1000);
 }
 
-document.getElementById('leave-btn').onclick = () => {
-    if(ws) ws.close(); // Спровоцирует onclose -> triggerDissolve()
+// Обработка кнопки выхода
+leaveBtn.onclick = () => {
+    if (isOwner) {
+        // Создатель уничтожает лобби (запускается анимация и рассылка)
+        triggerDissolve();
+    } else {
+        // Гость просто выходит (без экрана уничтожения, сразу в меню)
+        if(ws) { ws.onclose = null; ws.close(); }
+        resetApp();
+        showToast("Вы покинули лобби", "success");
+    }
 };
+
 document.getElementById('return-btn').onclick = resetApp;

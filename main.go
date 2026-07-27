@@ -91,7 +91,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		clientID = generateCode()
-	} else { // create
+	} else {
 		roomCode = generateCode()
 		clientID = generateCode()
 		isOwner = true
@@ -108,7 +108,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	room.Clients[clientID] = client
 	roomsMu.Unlock()
 
-	// Инициализация
 	client.mu.Lock()
 	conn.WriteJSON(map[string]interface{}{
 		"type": "init", "room": roomCode, "client_id": clientID, "is_owner": isOwner,
@@ -126,21 +125,44 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		roomsMu.Lock()
-		if r, ok := rooms[roomCode]; ok {
-			delete(r.Clients, clientID)
-
-			if r.OwnerID == clientID {
-				broadcastUnsafeTargeted(roomCode, Message{Type: "room_destroyed"}, "")
-				delete(rooms, roomCode)
-				log.Printf("Владелец покинул комнату %s. Комната уничтожена.", roomCode)
-			} else {
-				broadcastUnsafeTargeted(roomCode, Message{Type: "system", Content: "Пользователь отключился"}, "")
-				if len(r.Clients) == 0 {
-					delete(rooms, roomCode)
-				}
-			}
+		r, ok := rooms[roomCode]
+		if !ok {
+			roomsMu.Unlock()
+			conn.Close()
+			return
 		}
-		roomsMu.Unlock()
+
+		delete(r.Clients, clientID)
+		isOwner := r.OwnerID == clientID
+		isEmpty := len(r.Clients) == 0
+
+		// Запоминаем, кому отправить уведомления, пока мы под мьютексом
+		clientsToNotify := make([]*Client, 0, len(r.Clients))
+		for _, c := range r.Clients {
+			clientsToNotify = append(clientsToNotify, c)
+		}
+
+		// Если вышел создатель или комната пуста — удаляем её
+		if isOwner || isEmpty {
+			delete(rooms, roomCode)
+		}
+		roomsMu.Unlock() // 🔓 РАЗБЛОКИРУЕМ память ДО рассылки, чтобы избежать Deadlock!
+
+		// Безопасная рассылка
+		var msg Message
+		if isOwner {
+			msg = Message{Type: "room_destroyed"}
+			log.Printf("Владелец покинул комнату %s. Уничтожена.", roomCode)
+		} else {
+			msg = Message{Type: "system", Content: "Пользователь покинул комнату"}
+		}
+
+		for _, c := range clientsToNotify {
+			c.mu.Lock()
+			c.Conn.WriteJSON(msg)
+			c.mu.Unlock()
+		}
+
 		conn.Close()
 	}()
 
@@ -158,7 +180,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				r.History = append(r.History, msg)
 			}
 			roomsMu.Unlock()
-			// ИСКЛЮЧАЕМ clientID, чтобы не было дубля у отправителя
 			broadcastUnsafeTargeted(roomCode, msg, clientID)
 		} else if msg.Type == "signal" || msg.Type == "read_receipt" {
 			if msg.TargetID != "" {
