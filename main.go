@@ -18,7 +18,7 @@ type Message struct {
 	ID         string      `json:"id,omitempty"`
 	Type       string      `json:"type"`
 	Content    string      `json:"content"`
-	SenderID   string      `json:"sender_id"`
+	SenderID   string      `json:"sender_id,omitempty"`
 	TargetID   string      `json:"target_id,omitempty"`
 	SignalData interface{} `json:"signal_data,omitempty"`
 }
@@ -31,7 +31,7 @@ type Client struct {
 
 type Room struct {
 	ID      string
-	OwnerID string // Тот, кто создал комнату
+	OwnerID string
 	Clients map[string]*Client
 	History []Message
 }
@@ -70,29 +70,45 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	action := r.URL.Query().Get("action")
 	roomCode := r.URL.Query().Get("room")
-	if roomCode == "" {
-		roomCode = generateCode()
-	}
 
-	clientID := generateCode()
-	client := &Client{ID: clientID, Conn: conn}
+	var clientID string
+	var isOwner bool
 
 	roomsMu.Lock()
-	room, exists := rooms[roomCode]
-	if !exists {
-		room = &Room{
+	if action == "join" {
+		if roomCode == "" {
+			roomsMu.Unlock()
+			conn.WriteJSON(Message{Type: "error", Content: "Не указан код комнаты"})
+			conn.Close()
+			return
+		}
+		if _, exists := rooms[roomCode]; !exists {
+			roomsMu.Unlock()
+			conn.WriteJSON(Message{Type: "error", Content: "Комната не найдена или уже уничтожена"})
+			conn.Close()
+			return
+		}
+		clientID = generateCode()
+	} else { // create
+		roomCode = generateCode()
+		clientID = generateCode()
+		isOwner = true
+		rooms[roomCode] = &Room{
 			ID:      roomCode,
-			OwnerID: clientID, // Первый зашедший становится владельцем
+			OwnerID: clientID,
 			Clients: make(map[string]*Client),
 			History: make([]Message, 0),
 		}
-		rooms[roomCode] = room
 	}
+
+	room := rooms[roomCode]
+	client := &Client{ID: clientID, Conn: conn}
 	room.Clients[clientID] = client
-	isOwner := room.OwnerID == clientID
 	roomsMu.Unlock()
 
+	// Инициализация
 	client.mu.Lock()
 	conn.WriteJSON(map[string]interface{}{
 		"type": "init", "room": roomCode, "client_id": clientID, "is_owner": isOwner,
@@ -113,7 +129,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if r, ok := rooms[roomCode]; ok {
 			delete(r.Clients, clientID)
 
-			// Если вышел ВЛАДЕЛЕЦ - уничтожаем комнату для всех
 			if r.OwnerID == clientID {
 				broadcastUnsafeTargeted(roomCode, Message{Type: "room_destroyed"}, "")
 				delete(rooms, roomCode)
@@ -143,9 +158,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				r.History = append(r.History, msg)
 			}
 			roomsMu.Unlock()
-			broadcastUnsafeTargeted(roomCode, msg, "")
+			// ИСКЛЮЧАЕМ clientID, чтобы не было дубля у отправителя
+			broadcastUnsafeTargeted(roomCode, msg, clientID)
 		} else if msg.Type == "signal" || msg.Type == "read_receipt" {
-			// read_receipt и signal перенаправляются нужным участникам без сохранения в историю
 			if msg.TargetID != "" {
 				roomsMu.RLock()
 				if r, ok := rooms[roomCode]; ok {
