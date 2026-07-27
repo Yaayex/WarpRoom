@@ -1,5 +1,5 @@
 ![Главный экран приложения](screenshots/1.png)
-![Работа](images/2.png)
+![Работа](screenshots/2.png)
 
 # 🌌 WarpRoom
 
