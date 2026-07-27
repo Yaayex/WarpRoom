@@ -14,13 +14,13 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Структура сообщений теперь поддерживает P2P-сигнализацию
 type Message struct {
-	Type       string      `json:"type"`    // "text", "system", "room_destroyed", "peer_joined", "signal"
-	Content    string      `json:"content"` // Текст
+	ID         string      `json:"id,omitempty"`
+	Type       string      `json:"type"`
+	Content    string      `json:"content"`
 	SenderID   string      `json:"sender_id"`
-	TargetID   string      `json:"target_id,omitempty"`   // Для WebRTC (кому адресован сигнал)
-	SignalData interface{} `json:"signal_data,omitempty"` // SDP или ICE кандидат
+	TargetID   string      `json:"target_id,omitempty"`
+	SignalData interface{} `json:"signal_data,omitempty"`
 }
 
 type Client struct {
@@ -31,8 +31,9 @@ type Client struct {
 
 type Room struct {
 	ID      string
+	OwnerID string // Тот, кто создал комнату
 	Clients map[string]*Client
-	History []Message // Храним только текстовую историю
+	History []Message
 }
 
 var (
@@ -82,24 +83,25 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		room = &Room{
 			ID:      roomCode,
+			OwnerID: clientID, // Первый зашедший становится владельцем
 			Clients: make(map[string]*Client),
 			History: make([]Message, 0),
 		}
 		rooms[roomCode] = room
 	}
 	room.Clients[clientID] = client
+	isOwner := room.OwnerID == clientID
 	roomsMu.Unlock()
 
 	client.mu.Lock()
 	conn.WriteJSON(map[string]interface{}{
-		"type": "init", "room": roomCode, "client_id": clientID,
+		"type": "init", "room": roomCode, "client_id": clientID, "is_owner": isOwner,
 	})
 	for _, msg := range room.History {
 		conn.WriteJSON(msg)
 	}
 	client.mu.Unlock()
 
-	// Оповещаем остальных, что нужен WebRTC коннект
 	broadcastUnsafeTargeted(roomCode, Message{
 		Type:     "peer_joined",
 		SenderID: clientID,
@@ -110,11 +112,17 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		roomsMu.Lock()
 		if r, ok := rooms[roomCode]; ok {
 			delete(r.Clients, clientID)
-			broadcastUnsafeTargeted(roomCode, Message{Type: "system", Content: "Пользователь отключился"}, "")
 
-			if len(r.Clients) == 0 {
+			// Если вышел ВЛАДЕЛЕЦ - уничтожаем комнату для всех
+			if r.OwnerID == clientID {
+				broadcastUnsafeTargeted(roomCode, Message{Type: "room_destroyed"}, "")
 				delete(rooms, roomCode)
-				log.Printf("Комната %s уничтожена.", roomCode)
+				log.Printf("Владелец покинул комнату %s. Комната уничтожена.", roomCode)
+			} else {
+				broadcastUnsafeTargeted(roomCode, Message{Type: "system", Content: "Пользователь отключился"}, "")
+				if len(r.Clients) == 0 {
+					delete(rooms, roomCode)
+				}
 			}
 		}
 		roomsMu.Unlock()
@@ -129,7 +137,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		msg.SenderID = clientID
 
-		// Сохраняем только текст в историю
 		if msg.Type == "text" {
 			roomsMu.Lock()
 			if r, ok := rooms[roomCode]; ok {
@@ -137,22 +144,25 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			roomsMu.Unlock()
 			broadcastUnsafeTargeted(roomCode, msg, "")
-		} else if msg.Type == "signal" {
-			// Перенаправляем WebRTC сигналы конкретному пиру
-			roomsMu.RLock()
-			if r, ok := rooms[roomCode]; ok {
-				if target, ok := r.Clients[msg.TargetID]; ok {
-					target.mu.Lock()
-					target.Conn.WriteJSON(msg)
-					target.mu.Unlock()
+		} else if msg.Type == "signal" || msg.Type == "read_receipt" {
+			// read_receipt и signal перенаправляются нужным участникам без сохранения в историю
+			if msg.TargetID != "" {
+				roomsMu.RLock()
+				if r, ok := rooms[roomCode]; ok {
+					if target, ok := r.Clients[msg.TargetID]; ok {
+						target.mu.Lock()
+						target.Conn.WriteJSON(msg)
+						target.mu.Unlock()
+					}
 				}
+				roomsMu.RUnlock()
+			} else {
+				broadcastUnsafeTargeted(roomCode, msg, clientID)
 			}
-			roomsMu.RUnlock()
 		}
 	}
 }
 
-// Отправка всем, кроме excludedID (если excludedID == "" шлем всем)
 func broadcastUnsafeTargeted(roomCode string, msg Message, excludedID string) {
 	roomsMu.RLock()
 	defer roomsMu.RUnlock()
