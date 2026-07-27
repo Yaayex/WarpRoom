@@ -8,6 +8,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Контейнер для стильных уведомлений -->
+    <div id="toast-container"></div>
+
     <div id="auth-screen" class="screen active">
         <div class="glass-card">
             <div class="logo">Warp<span>Room</span></div>
@@ -16,7 +19,7 @@
             <button id="create-btn" class="primary-btn">Создать комнату</button>
             <div class="divider"><span>или</span></div>
             <div class="join-group">
-                <input type="text" id="room-code-input" placeholder="Код комнаты (5 букв)" maxlength="5">
+                <input type="text" id="room-code-input" placeholder="Код (5 символов)" maxlength="5">
                 <button id="join-btn" class="secondary-btn">Войти</button>
             </div>
         </div>
@@ -25,17 +28,17 @@
     <div id="room-screen" class="screen">
         <header class="glass-header">
             <div class="header-info">
-                <span class="room-label">Код (клик для копирования ссылки):</span>
+                <span class="room-label">Код (клик для ссылки):</span>
                 <span id="display-room-code" class="code-badge" title="Скопировать ссылку">ХХХХХ</span>
             </div>
-            <button id="leave-btn" class="danger-btn">Покинуть и уничтожить</button>
+            <button id="leave-btn" class="danger-btn">Уничтожить лобби</button>
         </header>
 
         <main id="chat-area">
             <div class="empty-state">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 16px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 <p>Перетащите файлы сюда (до 2 ГБ).</p>
-                <p class="sub-text">Передача идет напрямую (P2P). Закрытие вкладки уничтожит коннект.</p>
+                <p class="sub-text">P2P передача напрямую. Закрытие вкладки уничтожит соединение.</p>
             </div>
             <div id="messages"></div>
         </main>
@@ -50,15 +53,14 @@
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
         </div>
-        
         <div id="drop-overlay"><div class="drop-content"><p>Бросайте файлы сюда (P2P)</p></div></div>
     </div>
 
     <div id="destroyed-screen" class="screen">
         <div class="glass-card destroyed-card">
             <h2>Пространство растворилось</h2>
-            <p>P2P-соединение разорвано. Данные удалены.</p>
-            <button onclick="location.replace(location.pathname)" class="primary-btn">Вернуться</button>
+            <p>P2P-соединение разорвано. Все данные удалены.</p>
+            <button id="return-btn" class="primary-btn">Вернуться на главную</button>
         </div>
     </div>
 
